@@ -4,20 +4,48 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  password     String // Sẽ lưu mật khẩu đã bị băm (hashed), tuyệt đối không lưu raw
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  refreshToken String?
+  roleId       Int
+  role         Role     @relation(fields: [roleId], references: [id])
+}
+
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique // Chứa các giá trị: 'admin', 'manager', 'user'
+  users User[] // Mối quan hệ 1-N với bảng User
+}
+
+model Contact {
+  id         String @id @default(uuid())
+  fullName   String
+  phone      String
+  department String
 }
 
 model Product {
-  id              String           @id @default(uuid())
-  name            String
-  englishName     String?
-  category        String
-  suitableDishes  String?          @db.Text
-  characteristics String?          @db.Text
-  imageUrl        String?
-  variants        ProductVariant[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id               String           @id @default(uuid())
+  name             String           @unique
+  englishName      String?
+  category         String
+  subCategory      String?
+  suitableDishes   String?          @db.Text
+  characteristics  String?          @db.Text
+  imageUrl         String?
+  variants         ProductVariant[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  productSpec      String?          @map("product_spec")
+  marketPopularity String?          @map("market_popularity")
+  suitableChannels String?          @map("suitable_channels")
 }
 
 model Brand {
@@ -29,13 +57,18 @@ model Brand {
 
 model ProductVariant {
   id          String   @id @default(uuid())
+  sku         String?  @unique 
+  unit        String?  
+  packaging   String?  
+  brandNote   String?  @db.Text
+    
   productId   String
   brandId     String
+  
   product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   brand       Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  price       Float
-  packaging   String?
-  brandNote   String?  @db.Text
+  
 
   @@unique([productId, brandId])
 }
+
