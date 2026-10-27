@@ -9,12 +9,9 @@ import {
   Query,
   UseInterceptors,
   UploadedFile,
-  BadRequestException,
   UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -23,12 +20,14 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../common/roles.guard';
 import { GetProductsQueryDto } from './dto/get-products-query.dto';
 import { ExcelImportService } from './excel-import.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service'; // 1. Import CloudinaryService
 
 @Controller('api/products')
 export class ProductsController {
   constructor(
     private readonly productsService: ProductsService,
     private readonly excelImportService: ExcelImportService,
+    private readonly cloudinaryService: CloudinaryService, // 2. Inject vào constructor
   ) {}
 
   @Post('import-excel')
@@ -44,9 +43,6 @@ export class ProductsController {
     return this.productsService.create(createProductDto);
   }
 
-  // GET /api/products
-  // GET /api/products?category=thit-nhap-khau
-  // GET /api/products?category=thit-nhap-khau&subCategory=bo
   @Get()
   findAll(@Query() query: GetProductsQueryDto) {
     return this.productsService.findAll(query);
@@ -71,30 +67,26 @@ export class ProductsController {
     return this.productsService.remove(id);
   }
 
-  @Post(':id/image')
+  // 3. Cập nhật lại route upload ảnh bằng Cloudinary
+  @Patch(':id/image')
   @Roles('admin')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './public/uploads',
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = extname(file.originalname);
-          cb(null, `${uniqueSuffix}${ext}`);
-        },
-      }),
-    }),
-  )
-  async uploadImage(
+  @UseInterceptors(FileInterceptor('file'))
+  async patchUploadImage(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    if (!file) {
-      throw new BadRequestException('No file uploaded');
-    }
-    const imageUrl = `/public/uploads/${file.filename}`;
-    return this.productsService.updateImageUrl(id, imageUrl);
+    // 1. Kiểm tra sản phẩm tồn tại
+    await this.productsService.findOne(id);
+
+    // 2. Upload ảnh mới lên Cloudinary
+    const result = await this.cloudinaryService.uploadFile(file);
+
+    // 3. Gọi service cập nhật DB (hàm service sẽ tự lo việc xóa ảnh cũ dựa vào public_id cũ)
+    return this.productsService.updateImageUrl(
+      id,
+      result.secure_url,
+      result.public_id, // Truyền thêm public_id lên đây
+    );
   }
 }

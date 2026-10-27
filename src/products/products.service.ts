@@ -3,11 +3,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { GetProductsQueryDto } from './dto/get-products-query.dto';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
-
+  constructor(
+    private prisma: PrismaService,
+    private cloudinaryService: CloudinaryService,
+  ) {}
+  
   async create(createProductDto: CreateProductDto) {
     return this.prisma.product.create({
       data: createProductDto,
@@ -88,12 +92,24 @@ export class ProductsService {
     });
   }
 
-  async updateImageUrl(id: string, imageUrl: string) {
-    await this.findOne(id);
+  // Thêm cloudinaryService vào constructor của ProductsService
 
+  // Cập nhật lại hàm updateImageUrl
+  async updateImageUrl(id: string, imageUrl: string, imagePublicId: string) {
+    const product = await this.findOne(id);
+
+    // Nếu sản phẩm đã có ảnh cũ trên Cloudinary, tiến hành xóa nó đi
+    if (product.imagePublicId) {
+      await this.cloudinaryService.deleteFile(product.imagePublicId);
+    }
+
+    // Cập nhật link mới và public_id mới vào database
     return this.prisma.product.update({
       where: { id },
-      data: { imageUrl },
+      data: {
+        imageUrl,
+        imagePublicId,
+      },
     });
   }
 }
