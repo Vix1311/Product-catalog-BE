@@ -7,12 +7,13 @@ import { join } from 'path';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Cấu hình CORS chi tiết để Vercel không chặn nữa
+  // app.setGlobalPrefix('api');
+
+  // Bật CORS
   app.enableCors({
-    origin: true, // Cho phép mọi nguồn gọi vào (hoặc thay bằng domain frontend cụ thể của bạn)
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
-    allowedHeaders: 'Content-Type, Accept, Authorization',
   });
 
   app.useGlobalPipes(
