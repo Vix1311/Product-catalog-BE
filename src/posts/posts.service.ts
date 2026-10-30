@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import * as mammoth from 'mammoth';
-import * as TurndownService from 'turndown';
+import TurndownService from 'turndown';
 const { gfm } = require('turndown-plugin-gfm');
 
 @Injectable()
