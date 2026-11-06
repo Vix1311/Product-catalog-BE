@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import * as mammoth from 'mammoth';
@@ -27,6 +31,69 @@ export class PostsService {
     );
   }
 
+  // Helper: Tự động chuyển đổi các dòng chứa link Video trong Markdown thành thẻ <video> hoặc <iframe>
+  private parseVideoLinksInMarkdown(markdown: string): string {
+    return markdown
+      .split('\n')
+      .map((line) => {
+        const trimmed = line.trim();
+
+        // 1. Nhận diện cú pháp "Video: https://..." hoặc đường link file video trực tiếp (.mp4, .webm, .mov)
+        const videoMatch =
+          trimmed.match(
+            /^(?:Video:\s*)?(https?:\/\/[^\s]+\.(?:mp4|webm|ogg|mov)(?:\?[^\s]*)?)$/i,
+          ) || trimmed.match(/^Video:\s*(https?:\/\/[^\s]+)$/i);
+
+        if (videoMatch) {
+          const url = videoMatch[1];
+          // Kiểm tra nếu là link YouTube trong cú pháp "Video: ..."
+          const ytMatch = url.match(
+            /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+          );
+          if (ytMatch) {
+            return `\n<iframe width="100%" height="420" src="https://www.youtube.com/embed/${ytMatch[1]}" frameborder="0" allowfullscreen></iframe>\n`;
+          }
+          return `\n<video controls width="100%" src="${url}"></video>\n`;
+        }
+
+        // 2. Nhận diện dòng chỉ chứa độc lập 1 link YouTube
+        const standaloneYt = trimmed.match(
+          /^https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[^\s]*)$/i,
+        );
+        if (standaloneYt) {
+          return `\n<iframe width="100%" height="420" src="https://www.youtube.com/embed/${standaloneYt[1]}" frameborder="0" allowfullscreen></iframe>\n`;
+        }
+
+        return line;
+      })
+      .join('\n');
+  }
+
+  // MỚI: Upload ảnh hoặc video lẻ để chèn vào giữa bài viết
+  async uploadInlineMedia(file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException(
+        'Vui lòng chọn file ảnh hoặc video để tải lên',
+      );
+    }
+    const uploaded = await this.cloudinaryService.uploadFile(file);
+    const isVideo =
+      file.mimetype.startsWith('video/') ||
+      /\.(mp4|webm|ogg|mov)$/i.test(file.originalname);
+
+    const url = uploaded.secure_url;
+    const markdown = isVideo
+      ? `\n<video controls width="100%" src="${url}"></video>\n`
+      : `\n![${file.originalname.replace(/\.[^/.]+$/, '')}](${url})\n`;
+
+    return {
+      url,
+      publicId: uploaded.public_id,
+      type: isVideo ? 'video' : 'image',
+      markdown,
+    };
+  }
+
   // 1. IMPORT FILE WORD (.DOCX) THÀNH BÀI VIẾT BLOG
   async createFromWord(
     wordFile: Express.Multer.File,
@@ -52,7 +119,8 @@ export class PostsService {
             buffer: imageBuffer,
             mimetype: image.contentType,
           };
-          const uploaded = await this.cloudinaryService.uploadFile(fakeMulterFile);
+          const uploaded =
+            await this.cloudinaryService.uploadFile(fakeMulterFile);
           return { src: uploaded.secure_url };
         }),
       },
@@ -63,10 +131,13 @@ export class PostsService {
       headingStyle: 'atx',
       bulletListMarker: '-',
     });
-    turndownService.use(gfm); // Bật plugin giữ nguyên cấu trúc Bảng (Table)
-    const markdownContent = turndownService.turndown(htmlResult.value);
+    turndownService.use(gfm);
+    const rawMarkdown = turndownService.turndown(htmlResult.value);
 
-    // C. Upload ảnh bìa (nếu có gửi kèm), nếu không lấy ảnh mặc định
+    // Xử lý tự động các link Video trong bài Word
+    const markdownContent = this.parseVideoLinksInMarkdown(rawMarkdown);
+
+    // C. Upload ảnh bìa (nếu có gửi kèm)
     let imageUrl =
       'https://images.unsplash.com/photo-1558030006-450675393462?q=80&w=1000&auto=format&fit=crop';
     let imagePublicId: string | null = null;
@@ -82,20 +153,25 @@ export class PostsService {
     const finalTitle = bodyData?.title?.trim() || defaultTitle;
     const slug = this.generateSlug(finalTitle);
 
-    const plainText = (await mammoth.extractRawText({ buffer: wordFile.buffer })).value;
+    const plainText = (
+      await mammoth.extractRawText({ buffer: wordFile.buffer })
+    ).value;
     const excerpt =
       plainText
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line.length > 40)[0]
-        ?.slice(0, 180) + '...' || 'Cẩm nang kiến thức thực phẩm nhập khẩu B2B từ Khánh An Foods.';
+        ?.slice(0, 180) + '...' ||
+      'Cẩm nang kiến thức thực phẩm nhập khẩu B2B từ Khánh An Foods.';
 
-    // Ước tính thời gian đọc
     const wordCount = plainText.split(/\s+/).length;
     const readMinutes = Math.max(2, Math.ceil(wordCount / 220));
 
     const parsedTags = bodyData?.tags
-      ? bodyData.tags.split(',').map((t) => t.trim()).filter(Boolean)
+      ? bodyData.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
       : ['Thịt nhập khẩu', 'Cẩm nang B2B', 'Khánh An Foods'];
 
     return this.prisma.post.create({
@@ -109,6 +185,134 @@ export class PostsService {
         readTime: `${readMinutes} phút đọc`,
         featured: bodyData?.featured === 'true',
         tags: parsedTags,
+        content: markdownContent,
+      },
+    });
+  }
+
+  // MỚI: TẠO BÀI VIẾT TRỰC TIẾP TỪ TRÌNH SOẠN THẢO MARKDOWN
+  async createManual(
+    bodyData: {
+      title: string;
+      content: string;
+      category?: string;
+      tags?: string;
+      featured?: string;
+    },
+    coverImage?: Express.Multer.File,
+  ) {
+    if (!bodyData?.title?.trim() || !bodyData?.content?.trim()) {
+      throw new BadRequestException(
+        'Vui lòng nhập đầy đủ tiêu đề và nội dung bài viết',
+      );
+    }
+
+    let imageUrl =
+      'https://images.unsplash.com/photo-1558030006-450675393462?q=80&w=1000&auto=format&fit=crop';
+    let imagePublicId: string | null = null;
+
+    if (coverImage) {
+      const uploadedCover = await this.cloudinaryService.uploadFile(coverImage);
+      imageUrl = uploadedCover.secure_url;
+      imagePublicId = uploadedCover.public_id;
+    }
+
+    const finalTitle = bodyData.title.trim();
+    const slug = this.generateSlug(finalTitle);
+    const markdownContent = this.parseVideoLinksInMarkdown(bodyData.content);
+
+    // Bóc tách text thuần để tạo excerpt và tính thời gian đọc
+    const cleanText = markdownContent
+      .replace(/<[^>]*>/g, '')
+      .replace(/!\[.*?\]\(.*?\)/g, '')
+      .replace(/[#>*`~_-]/g, '');
+
+    const excerpt =
+      cleanText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 40)[0]
+        ?.slice(0, 180) + '...' ||
+      'Cẩm nang kiến thức thực phẩm nhập khẩu B2B từ Khánh An Foods.';
+
+    const wordCount = cleanText.split(/\s+/).length;
+    const readMinutes = Math.max(2, Math.ceil(wordCount / 220));
+
+    const parsedTags = bodyData?.tags
+      ? bodyData.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : ['Thịt nhập khẩu', 'Cẩm nang B2B', 'Khánh An Foods'];
+
+    return this.prisma.post.create({
+      data: {
+        title: finalTitle,
+        slug,
+        excerpt,
+        category: bodyData?.category || 'Kiến Thức Nguyên Liệu',
+        imageUrl,
+        imagePublicId,
+        readTime: `${readMinutes} phút đọc`,
+        featured: bodyData?.featured === 'true',
+        tags: parsedTags,
+        content: markdownContent,
+      },
+    });
+  }
+
+  // MỚI: CẬP NHẬT BÀI VIẾT (Hỗ trợ chèn thêm ảnh/video vào bài viết đã đăng)
+  async updatePost(
+    id: string,
+    bodyData: {
+      title?: string;
+      content?: string;
+      category?: string;
+      tags?: string;
+      featured?: string;
+    },
+    coverImage?: Express.Multer.File,
+  ) {
+    const existing = await this.prisma.post.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`Không tìm thấy bài viết với ID ${id}`);
+    }
+
+    let imageUrl = existing.imageUrl;
+    let imagePublicId = existing.imagePublicId;
+
+    if (coverImage) {
+      if (existing.imagePublicId) {
+        await this.cloudinaryService.deleteFile(existing.imagePublicId);
+      }
+      const uploadedCover = await this.cloudinaryService.uploadFile(coverImage);
+      imageUrl = uploadedCover.secure_url;
+      imagePublicId = uploadedCover.public_id;
+    }
+
+    const markdownContent = bodyData.content
+      ? this.parseVideoLinksInMarkdown(bodyData.content)
+      : existing.content;
+
+    const parsedTags = bodyData?.tags
+      ? bodyData.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : existing.tags;
+
+    return this.prisma.post.update({
+      where: { id },
+      data: {
+        title: bodyData.title?.trim() || existing.title,
+        category: bodyData.category || existing.category,
+        featured:
+          bodyData.featured !== undefined
+            ? bodyData.featured === 'true'
+            : existing.featured,
+        tags: parsedTags,
+        imageUrl,
+        imagePublicId,
         content: markdownContent,
       },
     });
@@ -140,7 +344,7 @@ export class PostsService {
     }));
   }
 
-  // 3. LẤY CHI TIẾT BÀI VIẾT (Hỗ trợ tìm bằng cả Slug hoặc ID)
+  // 3. LẤY CHI TIẾT BÀI VIẾT
   async findOne(slugOrId: string) {
     const post = await this.prisma.post.findFirst({
       where: {
