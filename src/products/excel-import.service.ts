@@ -1,8 +1,8 @@
+// excel-import.service.ts (Chỉ thay đổi đoạn bên trong khối tx.product.findFirst)
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as XLSX from 'xlsx';
 
-// Helper tách văn bản nhiều dòng
 function splitLines(text: string | null | undefined): string[] {
   if (!text) return [];
   return String(text)
@@ -11,7 +11,6 @@ function splitLines(text: string | null | undefined): string[] {
     .filter((line) => line.length > 0);
 }
 
-// Map chuyển đổi từ Cột 'Nhóm' trong Excel sang { category, subCategory }
 function mapCategoryAndSubCategory(rawNhom: string | undefined | null): {
   category: string;
   subCategory: string;
@@ -22,32 +21,20 @@ function mapCategoryAndSubCategory(rawNhom: string | undefined | null): {
 
   const nhomNormalized = rawNhom.toString().trim().toUpperCase();
 
-  // 1. Nhóm Thịt Nhập Khẩu
-  const proteinGroups = ['HEO', 'BÒ', 'GÀ', 'TRÂU', 'CỪU', 'DÊ', 'HẢI SẢN'];
-  if (proteinGroups.includes(nhomNormalized)) {
-    return {
-      category: 'thit-nhap-khau',
-      subCategory: nhomNormalized,
-    };
+  if (
+    ['HEO', 'BÒ', 'GÀ', 'TRÂU', 'CỪU', 'DÊ', 'HẢI SẢN'].includes(nhomNormalized)
+  ) {
+    return { category: 'thit-nhap-khau', subCategory: nhomNormalized };
   }
 
-  // 2. Nhóm Surimi & Chả cá (Thanh cua, Topping viên surimi)
   if (['THANH CUA', 'TOPPING', 'SURIMI', 'CHẢ CÁ'].includes(nhomNormalized)) {
-    return {
-      category: 'surimi',
-      subCategory: nhomNormalized, // "THANH CUA" hoặc "TOPPING"
-    };
+    return { category: 'surimi', subCategory: nhomNormalized };
   }
 
-  // 3. Nhóm Sauce / Nước sốt & Đồ ăn kèm (Kim chi, Dưa cải)
   if (['ĂN KÈM', 'SAUCE', 'NƯỚC SỐT', 'MAYONNAISE'].includes(nhomNormalized)) {
-    return {
-      category: 'sauce',
-      subCategory: nhomNormalized, // "ĂN KÈM"
-    };
+    return { category: 'sauce', subCategory: nhomNormalized };
   }
 
-  // 4. Các danh mục mở rộng khác (nếu có sau này)
   switch (nhomNormalized) {
     case 'BIA':
     case 'ĐỒ UỐNG':
@@ -65,12 +52,12 @@ function mapCategoryAndSubCategory(rawNhom: string | undefined | null): {
       return { category: 'thit-nhap-khau', subCategory: nhomNormalized };
   }
 }
+
 @Injectable()
 export class ExcelImportService {
   constructor(private readonly prisma: PrismaService) {}
 
   async importExcelProductData(fileBuffer: Buffer) {
-    // 1. Đọc file Excel từ Buffer
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
@@ -79,10 +66,9 @@ export class ExcelImportService {
     let successCount = 0;
     const errors: { row: number; error: string }[] = [];
 
-    // 2. Duyệt qua từng dòng dữ liệu
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index];
-      const rowNum = index + 2; // Dòng 1 là Header trong Excel
+      const rowNum = index + 2;
 
       const productName = row['Tên sản phẩm báo giá']?.toString().trim();
       if (!productName) {
@@ -90,19 +76,17 @@ export class ExcelImportService {
         continue;
       }
 
-      // 🎯 BƯỚC XỬ LÝ CHUẨN HÓA CATEGORY VÀ SUBCATEGORY
       const { category, subCategory } = mapCategoryAndSubCategory(row['Nhóm']);
 
       try {
         await this.prisma.$transaction(async (tx) => {
-          // A. Tìm hoặc tạo Product
           let product = await tx.product.findFirst({
             where: { name: productName },
           });
 
           const productData = {
-            category: category, // ⭕ VD: "thit-nhap-khau"
-            subCategory: subCategory, // ⭕ VD: "HEO", "BÒ", "GÀ", "TRÂU"
+            category: category,
+            subCategory: subCategory,
             englishName: row['Tên tiếng Anh'] || null,
             suitableDishes: row['Phù hợp món'] || null,
             characteristics: row['Đặc điểm sản phẩm'] || null,
@@ -113,14 +97,20 @@ export class ExcelImportService {
               row['Ảnh hiển thị'] ||
               row['Ảnh catalogue — đường dẫn tư liệu'] ||
               null,
+
+            // --- THÊM PHẦN ĐỌC DỮ LIỆU TỪ EXCEL CHO CÁC TRƯỜNG RTC ---
+            // Tên các cột trong ngoặc vuông này phải TRÙNG KHỚP với tiêu đề cột trong file Excel của bạn
+            description: row['Mô tả sản phẩm (RTC)'] || null,
+            ingredients: row['Thành phần (RTC)'] || null,
+            usageInstructions: row['Cách dùng (RTC)'] || null,
+            storageInstructions: row['Bảo quản (RTC)'] || null,
+            warnings: row['Lưu ý (RTC)'] || null,
+            highlights: row['Tiêu chí nổi bật (RTC)'] || null,
           };
 
           if (!product) {
             product = await tx.product.create({
-              data: {
-                name: productName,
-                ...productData,
-              },
+              data: { name: productName, ...productData },
             });
           } else {
             product = await tx.product.update({
@@ -129,7 +119,6 @@ export class ExcelImportService {
             });
           }
 
-          // B. Tách dữ liệu đa dòng Thương hiệu & Quy cách
           const brandLines = splitLines(row['Thương hiệu & Xuất xứ tham khảo']);
           const specLines = splitLines(row['Quy cách thùng/ theo nguồn']);
           const noteLines = splitLines(
@@ -145,7 +134,6 @@ export class ExcelImportService {
               .map((s) => s.trim());
             if (!brandName) continue;
 
-            // B1. Upsert Brand
             const brand = await tx.brand.upsert({
               where: { name: brandName },
               update: { origin: origin || undefined },
@@ -157,18 +145,11 @@ export class ExcelImportService {
               : null;
             const brandNoteInfo = noteLines[i] ? noteLines[i].trim() : null;
 
-            // B2. Liên kết Khóa phụ vào ProductVariant
             await tx.productVariant.upsert({
               where: {
-                productId_brandId: {
-                  productId: product.id,
-                  brandId: brand.id,
-                },
+                productId_brandId: { productId: product.id, brandId: brand.id },
               },
-              update: {
-                packaging: packagingInfo,
-                brandNote: brandNoteInfo,
-              },
+              update: { packaging: packagingInfo, brandNote: brandNoteInfo },
               create: {
                 productId: product.id,
                 brandId: brand.id,

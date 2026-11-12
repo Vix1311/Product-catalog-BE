@@ -47,6 +47,12 @@ model Product {
   productSpec      String?          @map("product_spec")
   marketPopularity String?          @map("market_popularity")
   suitableChannels String?          @map("suitable_channels")
+  description         String?  @map("description") @db.Text
+  ingredients         String?  @map("ingredients") @db.Text
+  usageInstructions   String?  @map("usage_instructions") @db.Text
+  storageInstructions String?  @map("storage_instructions") @db.Text
+  warnings            String?  @map("warnings") @db.Text
+  highlights          String?  @map("highlights") @db.Text
 }
 
 model Brand {

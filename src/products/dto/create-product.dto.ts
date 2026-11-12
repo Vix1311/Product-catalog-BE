@@ -40,4 +40,28 @@ export class CreateProductDto {
   @IsString()
   @IsOptional()
   suitableChannels?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  ingredients?: string;
+
+  @IsString()
+  @IsOptional()
+  usageInstructions?: string;
+
+  @IsString()
+  @IsOptional()
+  storageInstructions?: string;
+
+  @IsString()
+  @IsOptional()
+  warnings?: string;
+
+  @IsString()
+  @IsOptional()
+  highlights?: string;
 }
