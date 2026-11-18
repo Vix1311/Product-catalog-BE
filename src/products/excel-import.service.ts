@@ -98,14 +98,16 @@ export class ExcelImportService {
               row['Ảnh catalogue — đường dẫn tư liệu'] ||
               null,
 
-            // --- THÊM PHẦN ĐỌC DỮ LIỆU TỪ EXCEL CHO CÁC TRƯỜNG RTC ---
-            // Tên các cột trong ngoặc vuông này phải TRÙNG KHỚP với tiêu đề cột trong file Excel của bạn
-            description: row['Mô tả sản phẩm (RTC)'] || null,
-            ingredients: row['Thành phần (RTC)'] || null,
-            usageInstructions: row['Cách dùng (RTC)'] || null,
-            storageInstructions: row['Bảo quản (RTC)'] || null,
-            warnings: row['Lưu ý (RTC)'] || null,
-            highlights: row['Tiêu chí nổi bật (RTC)'] || null,
+            description:
+              row['Mô tả sản phẩm (RTC)'] || row['Mô tả sản phẩm'] || null,
+            ingredients: row['Thành phần (RTC)'] || row['Thành phần'] || null,
+            usageInstructions:
+              row['Cách dùng (RTC)'] || row['Cách dùng'] || null,
+            storageInstructions:
+              row['Bảo quản (RTC)'] || row['Bảo quản'] || null,
+            warnings: row['Lưu ý (RTC)'] || row['Lưu ý'] || null,
+            highlights:
+              row['Tiêu chí nổi bật (RTC)'] || row['Tiêu chí nổi bật'] || null,
           };
 
           if (!product) {
