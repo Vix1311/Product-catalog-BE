@@ -1,4 +1,3 @@
-// excel-import.service.ts (Chỉ thay đổi đoạn bên trong khối tx.product.findFirst)
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as XLSX from 'xlsx';
@@ -31,7 +30,7 @@ function mapCategoryAndSubCategory(rawNhom: string | undefined | null): {
     return { category: 'surimi', subCategory: nhomNormalized };
   }
 
-  if (['ĂN KÈM', 'SAUCE', 'NƯỚC SỐT', 'MAYONNAISE'].includes(nhomNormalized)) {
+  if (['ĂN KÈM', 'SAUCE', 'NƯỚC SỐT'].includes(nhomNormalized)) {
     return { category: 'sauce', subCategory: nhomNormalized };
   }
 
@@ -39,6 +38,8 @@ function mapCategoryAndSubCategory(rawNhom: string | undefined | null): {
     case 'BIA':
     case 'ĐỒ UỐNG':
       return { category: 'bia', subCategory: nhomNormalized };
+    case 'MAYONNAISE':
+      return { category: 'mayonaise', subCategory: nhomNormalized };
     case 'CHÀ BÔNG':
       return { category: 'cha-bong', subCategory: nhomNormalized };
     case 'RTE':
