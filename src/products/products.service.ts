@@ -11,7 +11,7 @@ export class ProductsService {
     private prisma: PrismaService,
     private cloudinaryService: CloudinaryService,
   ) {}
-  
+
   async create(createProductDto: CreateProductDto) {
     return this.prisma.product.create({
       data: createProductDto,
@@ -54,6 +54,88 @@ export class ProductsService {
         },
       },
     });
+  }
+
+  private buildWhereClause(query: {
+    category?: string;
+    subCategory?: string;
+    search?: string;
+  }) {
+    const where: any = {};
+
+    if (query.category && query.category !== 'ALL') {
+      where.category = query.category;
+    }
+
+    if (query.subCategory && query.subCategory !== 'ALL') {
+      where.subCategory = {
+        contains: query.subCategory,
+        mode: 'insensitive',
+      };
+    }
+
+    if (query.search?.trim()) {
+      const keyword = query.search.trim();
+      where.OR = [
+        { name: { contains: keyword, mode: 'insensitive' } },
+        { englishName: { contains: keyword, mode: 'insensitive' } },
+      ];
+    }
+
+    return where;
+  }
+
+  async findCatalogCards(query: GetProductsQueryDto) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const where = this.buildWhereClause(query);
+
+    const [items, total] = await Promise.all([
+      this.prisma.product.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          englishName: true,
+          category: true,
+          subCategory: true,
+          imageUrl: true,
+          productSpec: true,
+          marketPopularity: true,
+          suitableChannels: true,
+          // Chỉ lấy tối thiểu thông tin biến thể/thương hiệu để hiển thị badge trên card
+          variants: {
+            select: {
+              id: true,
+              unit: true,
+              packaging: true,
+              brand: {
+                select: {
+                  id: true,
+                  name: true,
+                  origin: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.product.count({ where }),
+    ]);
+
+    return {
+      data: items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findOne(id: string) {

@@ -48,6 +48,11 @@ export class ProductsController {
     return this.productsService.findAll(query);
   }
 
+  @Get('catalog')
+  findCatalogCards(@Query() query: GetProductsQueryDto) {
+    return this.productsService.findCatalogCards(query);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);
