@@ -53,6 +53,8 @@ model Product {
   storageInstructions String?  @map("storage_instructions") @db.Text
   warnings            String?  @map("warnings") @db.Text
   highlights          String?  @map("highlights") @db.Text
+
+  @@index([category, subCategory, name])
 }
 
 model Brand {

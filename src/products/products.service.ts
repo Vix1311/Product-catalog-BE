@@ -12,6 +12,11 @@ export class ProductsService {
     private cloudinaryService: CloudinaryService,
   ) {}
 
+  private readonly defaultOrderBy = [
+    { category: 'asc' as const },
+    { subCategory: 'asc' as const },
+    { name: 'asc' as const },
+  ];
   async create(createProductDto: CreateProductDto) {
     return this.prisma.product.create({
       data: createProductDto,
@@ -46,6 +51,7 @@ export class ProductsService {
 
     return this.prisma.product.findMany({
       where,
+      orderBy: this.defaultOrderBy,
       include: {
         variants: {
           include: {
@@ -85,9 +91,14 @@ export class ProductsService {
     return where;
   }
 
+  private truncateText(text: string | null, maxLength = 160): string | null {
+    if (!text) return null;
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+  }
+
   async findCatalogCards(query: GetProductsQueryDto) {
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
+    const limit = Number(query.limit) || 12;
     const skip = (page - 1) * limit;
     const where = this.buildWhereClause(query);
 
@@ -96,7 +107,7 @@ export class ProductsService {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: this.defaultOrderBy,
         select: {
           id: true,
           name: true,
@@ -104,18 +115,13 @@ export class ProductsService {
           category: true,
           subCategory: true,
           imageUrl: true,
-          productSpec: true,
-          marketPopularity: true,
-          suitableChannels: true,
-          // Chỉ lấy tối thiểu thông tin biến thể/thương hiệu để hiển thị badge trên card
+          suitableDishes: true,
+          characteristics: true,
+          description: true,
           variants: {
             select: {
-              id: true,
-              unit: true,
-              packaging: true,
               brand: {
                 select: {
-                  id: true,
                   name: true,
                   origin: true,
                 },
@@ -127,8 +133,15 @@ export class ProductsService {
       this.prisma.product.count({ where }),
     ]);
 
+    const lightItems = items.map((item) => ({
+      ...item,
+      suitableDishes: this.truncateText(item.suitableDishes),
+      characteristics: this.truncateText(item.characteristics),
+      description: this.truncateText(item.description),
+    }));
+
     return {
-      data: items,
+      data: lightItems,
       meta: {
         total,
         page,
